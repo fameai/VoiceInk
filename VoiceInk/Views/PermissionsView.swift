@@ -44,33 +44,14 @@ class PermissionManager: ObservableObject {
     }
     
     func checkAccessibilityPermissions() {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
-        var accessibilityEnabled = AXIsProcessTrustedWithOptions(options)
-
-        // Update UserDefaults cache
-        if accessibilityEnabled {
-            UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
-        } else if UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted") {
-            // macOS caches permission results - trust UserDefaults if we previously detected granted
-            accessibilityEnabled = true
-        }
-
+        let accessibilityEnabled = PermissionHelper.hasAccessibilityPermission
         DispatchQueue.main.async {
             self.isAccessibilityEnabled = accessibilityEnabled
         }
     }
 
     func checkScreenRecordingPermission() {
-        var screenRecordingEnabled = CGPreflightScreenCaptureAccess()
-
-        // Update UserDefaults cache
-        if screenRecordingEnabled {
-            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
-        } else if UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted") {
-            // macOS caches permission results - trust UserDefaults if we previously detected granted
-            screenRecordingEnabled = true
-        }
-
+        let screenRecordingEnabled = PermissionHelper.hasScreenRecordingPermission
         DispatchQueue.main.async {
             self.isScreenRecordingEnabled = screenRecordingEnabled
         }
@@ -87,7 +68,7 @@ class PermissionManager: ObservableObject {
             let granted = CGPreflightScreenCaptureAccess()
             if granted {
                 timer.invalidate()
-                UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
+                PermissionHelper.markScreenRecordingPermissionGranted()
                 DispatchQueue.main.async {
                     self?.isScreenRecordingEnabled = true
                     completion(true)
@@ -112,7 +93,7 @@ class PermissionManager: ObservableObject {
             let granted = AXIsProcessTrusted()
             if granted {
                 timer.invalidate()
-                UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
+                PermissionHelper.markAccessibilityPermissionGranted()
                 DispatchQueue.main.async {
                     self?.isAccessibilityEnabled = true
                     completion(true)

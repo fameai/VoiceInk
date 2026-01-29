@@ -269,32 +269,16 @@ struct OnboardingPermissionsView: View {
     
     private func checkExistingPermissions() {
         // Check microphone permission
-        permissionStates[0] = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        permissionStates[0] = PermissionHelper.hasMicrophonePermission
 
         // Check if device is selected
         permissionStates[1] = audioDeviceManager.selectedDeviceID != nil
 
-        // Check accessibility permission - with UserDefaults fallback for macOS caching issues
-        let accessibilityOptions: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
-        var accessibilityGranted = AXIsProcessTrustedWithOptions(accessibilityOptions)
-        if accessibilityGranted {
-            // Save to UserDefaults when we detect permission is granted
-            UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
-        } else if UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted") {
-            // Trust UserDefaults if we previously detected permission was granted
-            // (macOS caching can cause AXIsProcessTrusted to return false even when granted)
-            accessibilityGranted = true
-        }
-        permissionStates[2] = accessibilityGranted
+        // Check accessibility permission (with UserDefaults fallback for macOS caching)
+        permissionStates[2] = PermissionHelper.hasAccessibilityPermission
 
-        // Check screen recording permission with UserDefaults fallback
-        var screenRecordingGranted = CGPreflightScreenCaptureAccess()
-        if screenRecordingGranted {
-            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
-        } else if UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted") {
-            screenRecordingGranted = true
-        }
-        permissionStates[3] = screenRecordingGranted
+        // Check screen recording permission (with UserDefaults fallback for macOS caching)
+        permissionStates[3] = PermissionHelper.hasScreenRecordingPermission
 
         // Check keyboard shortcut
         permissionStates[4] = hotkeyManager.isShortcutConfigured
@@ -358,8 +342,7 @@ struct OnboardingPermissionsView: View {
                 accessibilityCheckCount += 1
                 if AXIsProcessTrusted() {
                     timer.invalidate()
-                    // Save to UserDefaults for future launches (macOS caching workaround)
-                    UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
+                    PermissionHelper.markAccessibilityPermissionGranted()
                     DispatchQueue.main.async {
                         self.permissionStates[permissionIndex] = true
                         withAnimation {
@@ -395,7 +378,7 @@ struct OnboardingPermissionsView: View {
                 checkCount += 1
                 if CGPreflightScreenCaptureAccess() {
                     timer.invalidate()
-                    UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
+                    PermissionHelper.markScreenRecordingPermissionGranted()
                     DispatchQueue.main.async {
                         self.permissionStates[permissionIndex] = true
                         withAnimation {

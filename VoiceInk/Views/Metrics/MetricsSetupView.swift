@@ -4,8 +4,8 @@ import KeyboardShortcuts
 struct MetricsSetupView: View {
     @EnvironmentObject private var whisperState: WhisperState
     @EnvironmentObject private var hotkeyManager: HotkeyManager
-    @State private var isAccessibilityEnabled = AXIsProcessTrusted() || UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted")
-    @State private var isScreenRecordingEnabled = CGPreflightScreenCaptureAccess() || UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted")
+    @State private var isAccessibilityEnabled = PermissionHelper.hasAccessibilityPermission
+    @State private var isScreenRecordingEnabled = PermissionHelper.hasScreenRecordingPermission
     
     var body: some View {
         ScrollView {
