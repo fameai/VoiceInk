@@ -308,9 +308,11 @@ struct OnboardingPermissionsView: View {
         
         switch permissions[currentPermissionIndex].type {
         case .microphone:
+            // Capture current index to avoid race conditions
+            let permissionIndex = currentPermissionIndex
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 DispatchQueue.main.async {
-                    self.permissionStates[self.currentPermissionIndex] = granted
+                    self.permissionStates[permissionIndex] = granted
                     if granted {
                         withAnimation {
                             self.showAnimation = true
@@ -347,6 +349,9 @@ struct OnboardingPermissionsView: View {
             let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             AXIsProcessTrustedWithOptions(options)
 
+            // Capture current index to avoid race conditions
+            let permissionIndex = currentPermissionIndex
+
             // Start checking for permission status
             var accessibilityCheckCount = 0
             Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
@@ -355,16 +360,22 @@ struct OnboardingPermissionsView: View {
                     timer.invalidate()
                     // Save to UserDefaults for future launches (macOS caching workaround)
                     UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
-                    permissionStates[currentPermissionIndex] = true
-                    withAnimation {
-                        showAnimation = true
+                    DispatchQueue.main.async {
+                        self.permissionStates[permissionIndex] = true
+                        withAnimation {
+                            self.showAnimation = true
+                        }
                     }
-                } else if accessibilityCheckCount >= 10 {
-                    // After 5 seconds, macOS cache hasn't updated - save flag and relaunch
+                } else if accessibilityCheckCount >= 20 {
+                    // After 10 seconds, open System Settings and relaunch to refresh permission cache
                     timer.invalidate()
-                    // Assume user granted if they waited this long at the prompt
-                    UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
-                    relaunchApp()
+                    if let prefpaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        NSWorkspace.shared.open(prefpaneURL)
+                    }
+                    // Relaunch to pick up any permission changes - do NOT assume granted
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.relaunchApp()
+                    }
                 }
             }
             
@@ -373,40 +384,36 @@ struct OnboardingPermissionsView: View {
             // CGRequestScreenCaptureAccess() alone doesn't always show the prompt on newer macOS
             let _ = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
 
+            // Capture current index to avoid race conditions
+            let permissionIndex = currentPermissionIndex
+
             // Give the system a moment to show the prompt and user to respond
+            // Single timer that handles both initial check and post-settings check
             var checkCount = 0
+            var settingsOpened = false
             Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
                 checkCount += 1
                 if CGPreflightScreenCaptureAccess() {
                     timer.invalidate()
                     UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
-                    permissionStates[currentPermissionIndex] = true
-                    withAnimation {
-                        showAnimation = true
+                    DispatchQueue.main.async {
+                        self.permissionStates[permissionIndex] = true
+                        withAnimation {
+                            self.showAnimation = true
+                        }
                     }
-                } else if checkCount >= 6 {
-                    // After 3 seconds, if still no permission, open System Settings as fallback
-                    timer.invalidate()
+                } else if checkCount == 6 && !settingsOpened {
+                    // After 3 seconds, open System Settings as fallback (but keep checking)
+                    settingsOpened = true
                     if let prefpaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                         NSWorkspace.shared.open(prefpaneURL)
                     }
-                    // Continue checking after opening settings, with relaunch fallback
-                    var innerCheckCount = 0
-                    Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { innerTimer in
-                        innerCheckCount += 1
-                        if CGPreflightScreenCaptureAccess() {
-                            innerTimer.invalidate()
-                            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
-                            permissionStates[currentPermissionIndex] = true
-                            withAnimation {
-                                showAnimation = true
-                            }
-                        } else if innerCheckCount >= 10 {
-                            // macOS cache hasn't updated - save flag and relaunch
-                            innerTimer.invalidate()
-                            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
-                            relaunchApp()
-                        }
+                } else if checkCount >= 30 {
+                    // After 15 seconds total, relaunch to refresh permission cache
+                    // Do NOT assume permission was granted
+                    timer.invalidate()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.relaunchApp()
                     }
                 }
             }
@@ -539,13 +546,17 @@ struct OnboardingPermissionsView: View {
         task.arguments = ["-n", bundlePath]  // -n opens a new instance
         do {
             try task.run()
-            // Small delay to ensure open command starts before we terminate
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Wait for new instance to fully launch before terminating
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 NSApp.terminate(nil)
             }
         } catch {
-            // If relaunch fails, just terminate
-            NSApp.terminate(nil)
+            // If relaunch fails, show error to user instead of silently terminating
+            let alert = NSAlert()
+            alert.messageText = "Failed to Relaunch"
+            alert.informativeText = "Please manually restart VoiceInk to complete permission setup."
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 }

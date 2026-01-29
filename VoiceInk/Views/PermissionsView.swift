@@ -45,15 +45,34 @@ class PermissionManager: ObservableObject {
     
     func checkAccessibilityPermissions() {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
-        let accessibilityEnabled = AXIsProcessTrustedWithOptions(options)
+        var accessibilityEnabled = AXIsProcessTrustedWithOptions(options)
+
+        // Update UserDefaults cache
+        if accessibilityEnabled {
+            UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
+        } else if UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted") {
+            // macOS caches permission results - trust UserDefaults if we previously detected granted
+            accessibilityEnabled = true
+        }
+
         DispatchQueue.main.async {
             self.isAccessibilityEnabled = accessibilityEnabled
         }
     }
-    
+
     func checkScreenRecordingPermission() {
+        var screenRecordingEnabled = CGPreflightScreenCaptureAccess()
+
+        // Update UserDefaults cache
+        if screenRecordingEnabled {
+            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
+        } else if UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted") {
+            // macOS caches permission results - trust UserDefaults if we previously detected granted
+            screenRecordingEnabled = true
+        }
+
         DispatchQueue.main.async {
-            self.isScreenRecordingEnabled = CGPreflightScreenCaptureAccess()
+            self.isScreenRecordingEnabled = screenRecordingEnabled
         }
     }
     
@@ -63,17 +82,18 @@ class PermissionManager: ObservableObject {
 
         // Give system time to show prompt and user to respond
         var checkCount = 0
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
             checkCount += 1
             let granted = CGPreflightScreenCaptureAccess()
             if granted {
                 timer.invalidate()
+                UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
                 DispatchQueue.main.async {
-                    self.isScreenRecordingEnabled = true
+                    self?.isScreenRecordingEnabled = true
                     completion(true)
                 }
-            } else if checkCount >= 6 {
-                // After 3 seconds, permission wasn't auto-granted - open settings then relaunch
+            } else if checkCount >= 10 {
+                // After 5 seconds, permission wasn't auto-granted - caller should handle fallback
                 timer.invalidate()
                 completion(false)
             }
@@ -87,16 +107,18 @@ class PermissionManager: ObservableObject {
 
         // Give system time to show prompt and user to respond
         var checkCount = 0
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
             checkCount += 1
             let granted = AXIsProcessTrusted()
             if granted {
                 timer.invalidate()
+                UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
                 DispatchQueue.main.async {
-                    self.isAccessibilityEnabled = true
+                    self?.isAccessibilityEnabled = true
                     completion(true)
                 }
-            } else if checkCount >= 6 {
+            } else if checkCount >= 10 {
+                // After 5 seconds, permission wasn't auto-granted - caller should handle fallback
                 timer.invalidate()
                 completion(false)
             }
@@ -111,13 +133,17 @@ class PermissionManager: ObservableObject {
         task.arguments = ["-n", bundlePath]  // -n opens a new instance
         do {
             try task.run()
-            // Small delay to ensure open command starts before we terminate
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Wait for new instance to fully launch before terminating
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 NSApp.terminate(nil)
             }
         } catch {
-            // If relaunch fails, just terminate
-            NSApp.terminate(nil)
+            // If relaunch fails, show error to user
+            let alert = NSAlert()
+            alert.messageText = "Failed to Relaunch"
+            alert.informativeText = "Please manually restart VoiceInk to complete permission setup."
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
     

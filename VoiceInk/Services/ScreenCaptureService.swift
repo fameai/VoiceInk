@@ -59,29 +59,44 @@ class ScreenCaptureService: ObservableObject {
         return nil
     }
     
+    /// Check if screen recording permission is available (using both system API and cached UserDefaults)
+    private func hasScreenRecordingPermission() -> Bool {
+        if CGPreflightScreenCaptureAccess() {
+            return true
+        }
+        // Fall back to UserDefaults cache for macOS permission caching issues
+        return UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted")
+    }
+
     func captureActiveWindow() async -> NSImage? {
+        // Check permission before attempting capture
+        guard hasScreenRecordingPermission() else {
+            return nil
+        }
+
         guard let windowInfo = getActiveWindowInfo() else {
             return nil
         }
-        
+
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            
+
             guard let targetWindow = content.windows.first(where: { $0.windowID == windowInfo.windowID }) else {
                 return nil
             }
-            
+
             let filter = SCContentFilter(desktopIndependentWindow: targetWindow)
-            
+
             let configuration = SCStreamConfiguration()
             configuration.width = Int(targetWindow.frame.width) * 2
             configuration.height = Int(targetWindow.frame.height) * 2
-            
+
             let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            
+
             return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-            
+
         } catch {
+            // Capture failed - likely permission issue or window no longer available
             return nil
         }
     }
@@ -124,12 +139,17 @@ class ScreenCaptureService: ObservableObject {
     }
     
     func captureAndExtractText() async -> String? {
-        guard !isCapturing else { 
-            return nil 
+        guard !isCapturing else {
+            return nil
         }
-        
+
+        // Check permission before attempting capture
+        guard hasScreenRecordingPermission() else {
+            return nil
+        }
+
         isCapturing = true
-        defer { 
+        defer {
             DispatchQueue.main.async {
                 self.isCapturing = false
             }
