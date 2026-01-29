@@ -107,7 +107,7 @@ class ScreenCaptureService: ObservableObject {
             
             do {
                 try requestHandler.perform([request])
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                guard let observations = request.results, !observations.isEmpty else {
                     return .success(nil)
                 }
                 
