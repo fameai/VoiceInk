@@ -6,8 +6,8 @@ import os
 final class KeychainService {
     static let shared = KeychainService()
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "KeychainService")
-    private let service = "com.prakashjoshipax.VoiceInk"
+    private let logger = Logger(subsystem: "com.npdev.voiceink", category: "KeychainService")
+    private let service = "com.npdev.VoiceInk"
 
     private init() {}
 

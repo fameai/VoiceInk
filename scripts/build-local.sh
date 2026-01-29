@@ -13,6 +13,11 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENTITLEMENTS="/tmp/VoiceInk-local.entitlements"
+# For ad-hoc signing (no Apple account in Xcode required)
+SIGNING_IDENTITY="-"
+# To use proper signing, add Apple account to Xcode and uncomment:
+# SIGNING_IDENTITY="Apple Development: Nickolas Prather (WH9BPCK2DP)"
+TEAM_ID="ZJG27HZF2P"
 
 cd "$PROJECT_DIR"
 
@@ -48,14 +53,9 @@ echo -e "${YELLOW}Installing to /Applications...${NC}"
 rm -rf /Applications/VoiceInk.app
 cp -R "$APP_PATH" /Applications/
 
-# Check for entitlements file
-if [ -f "$ENTITLEMENTS" ]; then
-    echo "Signing with entitlements..."
-    codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" /Applications/VoiceInk.app
-else
-    echo "Signing (no entitlements file found at $ENTITLEMENTS)..."
-    codesign --force --deep --sign - /Applications/VoiceInk.app
-fi
+# Re-sign with entitlements
+echo "Signing with developer certificate..."
+codesign --force --deep --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" /Applications/VoiceInk.app
 
 echo -e "${GREEN}✓ VoiceInk installed successfully${NC}"
 echo ""
