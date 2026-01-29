@@ -37,8 +37,12 @@ extension WhisperState {
         parakeetDownloadStates[modelName] = true
         downloadProgress[modelName] = 0.0
 
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { timer in
-            Task { @MainActor in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] timer in
+            Task { @MainActor [weak self] in
+                guard let self = self else {
+                    timer.invalidate()
+                    return
+                }
                 if let currentProgress = self.downloadProgress[modelName], currentProgress < 0.9 {
                     self.downloadProgress[modelName] = currentProgress + 0.005
                 }
@@ -83,7 +87,9 @@ extension WhisperState {
             }
             UserDefaults.standard.set(false, forKey: parakeetDefaultsKey(for: model.name))
         } catch {
-            // Silently ignore removal errors
+            print("Failed to delete Parakeet model \(model.name): \(error.localizedDescription)")
+            // Still mark as not downloaded since user intended to delete
+            UserDefaults.standard.set(false, forKey: parakeetDefaultsKey(for: model.name))
         }
 
         refreshAllAvailableModels()
