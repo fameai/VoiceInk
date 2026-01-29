@@ -4,8 +4,8 @@ import KeyboardShortcuts
 struct MetricsSetupView: View {
     @EnvironmentObject private var whisperState: WhisperState
     @EnvironmentObject private var hotkeyManager: HotkeyManager
-    @State private var isAccessibilityEnabled = AXIsProcessTrusted()
-    @State private var isScreenRecordingEnabled = CGPreflightScreenCaptureAccess()
+    @State private var isAccessibilityEnabled = AXIsProcessTrusted() || UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted")
+    @State private var isScreenRecordingEnabled = CGPreflightScreenCaptureAccess() || UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted")
     
     var body: some View {
         ScrollView {
@@ -152,11 +152,11 @@ struct MetricsSetupView: View {
             // Handle different permission requests based on which one is missing
             if hotkeyManager.selectedHotkey1 == .none {
                 openSettings()
-            } else if !AXIsProcessTrusted() {
+            } else if !isAccessibilityEnabled {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                     NSWorkspace.shared.open(url)
                 }
-            } else if !CGPreflightScreenCaptureAccess() {
+            } else if !isScreenRecordingEnabled {
                 CGRequestScreenCaptureAccess()
                 // After requesting, open system preferences as fallback
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
@@ -169,9 +169,9 @@ struct MetricsSetupView: View {
     private func getActionButtonTitle() -> String {
         if hotkeyManager.selectedHotkey1 == .none {
             return "Configure Shortcut"
-        } else if !AXIsProcessTrusted() {
+        } else if !isAccessibilityEnabled {
             return "Enable Accessibility"
-        } else if !CGPreflightScreenCaptureAccess() {
+        } else if !isScreenRecordingEnabled {
             return "Enable Screen Recording"
         } else if whisperState.currentTranscriptionModel == nil {
             return "Download Model"
@@ -187,8 +187,8 @@ struct MetricsSetupView: View {
     
     private var isShortcutAndAccessibilityGranted: Bool {
         hotkeyManager.selectedHotkey1 != .none &&
-        AXIsProcessTrusted() && 
-        CGPreflightScreenCaptureAccess()
+        isAccessibilityEnabled &&
+        isScreenRecordingEnabled
     }
     
     private func openSettings() {
