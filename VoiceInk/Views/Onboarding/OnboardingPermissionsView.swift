@@ -270,16 +270,32 @@ struct OnboardingPermissionsView: View {
     private func checkExistingPermissions() {
         // Check microphone permission
         permissionStates[0] = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-        
+
         // Check if device is selected
         permissionStates[1] = audioDeviceManager.selectedDeviceID != nil
-        
-        // Check accessibility permission
-        permissionStates[2] = AXIsProcessTrusted()
-        
-        // Check screen recording permission
-        permissionStates[3] = CGPreflightScreenCaptureAccess()
-        
+
+        // Check accessibility permission - with UserDefaults fallback for macOS caching issues
+        let accessibilityOptions: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
+        var accessibilityGranted = AXIsProcessTrustedWithOptions(accessibilityOptions)
+        if accessibilityGranted {
+            // Save to UserDefaults when we detect permission is granted
+            UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
+        } else if UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted") {
+            // Trust UserDefaults if we previously detected permission was granted
+            // (macOS caching can cause AXIsProcessTrusted to return false even when granted)
+            accessibilityGranted = true
+        }
+        permissionStates[2] = accessibilityGranted
+
+        // Check screen recording permission with UserDefaults fallback
+        var screenRecordingGranted = CGPreflightScreenCaptureAccess()
+        if screenRecordingGranted {
+            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
+        } else if UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted") {
+            screenRecordingGranted = true
+        }
+        permissionStates[3] = screenRecordingGranted
+
         // Check keyboard shortcut
         permissionStates[4] = hotkeyManager.isShortcutConfigured
     }
@@ -330,34 +346,67 @@ struct OnboardingPermissionsView: View {
         case .accessibility:
             let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             AXIsProcessTrustedWithOptions(options)
-            
+
             // Start checking for permission status
+            var accessibilityCheckCount = 0
             Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                accessibilityCheckCount += 1
                 if AXIsProcessTrusted() {
                     timer.invalidate()
+                    // Save to UserDefaults for future launches (macOS caching workaround)
+                    UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
                     permissionStates[currentPermissionIndex] = true
                     withAnimation {
                         showAnimation = true
                     }
+                } else if accessibilityCheckCount >= 10 {
+                    // After 5 seconds, macOS cache hasn't updated - save flag and relaunch
+                    timer.invalidate()
+                    // Assume user granted if they waited this long at the prompt
+                    UserDefaults.standard.set(true, forKey: "accessibilityPermissionGranted")
+                    relaunchApp()
                 }
             }
             
         case .screenRecording:
-            // First try to request permission programmatically
-            CGRequestScreenCaptureAccess()
-            
-            // Also open system preferences as fallback
-            if let prefpaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(prefpaneURL)
-            }
-            
-            // Start checking for permission status
+            // Actually attempt a screen capture - this reliably triggers the system permission prompt
+            // CGRequestScreenCaptureAccess() alone doesn't always show the prompt on newer macOS
+            let _ = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+
+            // Give the system a moment to show the prompt and user to respond
+            var checkCount = 0
             Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                checkCount += 1
                 if CGPreflightScreenCaptureAccess() {
                     timer.invalidate()
+                    UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
                     permissionStates[currentPermissionIndex] = true
                     withAnimation {
                         showAnimation = true
+                    }
+                } else if checkCount >= 6 {
+                    // After 3 seconds, if still no permission, open System Settings as fallback
+                    timer.invalidate()
+                    if let prefpaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                        NSWorkspace.shared.open(prefpaneURL)
+                    }
+                    // Continue checking after opening settings, with relaunch fallback
+                    var innerCheckCount = 0
+                    Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { innerTimer in
+                        innerCheckCount += 1
+                        if CGPreflightScreenCaptureAccess() {
+                            innerTimer.invalidate()
+                            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
+                            permissionStates[currentPermissionIndex] = true
+                            withAnimation {
+                                showAnimation = true
+                            }
+                        } else if innerCheckCount >= 10 {
+                            // macOS cache hasn't updated - save flag and relaunch
+                            innerTimer.invalidate()
+                            UserDefaults.standard.set(true, forKey: "screenRecordingPermissionGranted")
+                            relaunchApp()
+                        }
                     }
                 }
             }
@@ -479,6 +528,24 @@ struct OnboardingPermissionsView: View {
         }
         .onChange(of: binding.wrappedValue) { newValue in
             onConfigured(newValue != .none)
+        }
+    }
+
+    private func relaunchApp() {
+        // macOS caches AXIsProcessTrusted() result - need to relaunch to pick up new permission
+        guard let bundlePath = Bundle.main.bundlePath as String? else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", bundlePath]  // -n opens a new instance
+        do {
+            try task.run()
+            // Small delay to ensure open command starts before we terminate
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            // If relaunch fails, just terminate
+            NSApp.terminate(nil)
         }
     }
 }

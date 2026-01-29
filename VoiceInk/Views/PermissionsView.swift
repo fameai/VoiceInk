@@ -57,8 +57,68 @@ class PermissionManager: ObservableObject {
         }
     }
     
-    func requestScreenRecordingPermission() {
-        CGRequestScreenCaptureAccess()
+    func requestScreenRecordingPermission(completion: @escaping (Bool) -> Void) {
+        // Actually attempt a screen capture - this reliably triggers the system permission prompt
+        let _ = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+
+        // Give system time to show prompt and user to respond
+        var checkCount = 0
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            checkCount += 1
+            let granted = CGPreflightScreenCaptureAccess()
+            if granted {
+                timer.invalidate()
+                DispatchQueue.main.async {
+                    self.isScreenRecordingEnabled = true
+                    completion(true)
+                }
+            } else if checkCount >= 6 {
+                // After 3 seconds, permission wasn't auto-granted - open settings then relaunch
+                timer.invalidate()
+                completion(false)
+            }
+        }
+    }
+
+    func requestAccessibilityPermission(completion: @escaping (Bool) -> Void) {
+        // Request with prompt - this should show the system dialog
+        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        AXIsProcessTrustedWithOptions(options)
+
+        // Give system time to show prompt and user to respond
+        var checkCount = 0
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            checkCount += 1
+            let granted = AXIsProcessTrusted()
+            if granted {
+                timer.invalidate()
+                DispatchQueue.main.async {
+                    self.isAccessibilityEnabled = true
+                    completion(true)
+                }
+            } else if checkCount >= 6 {
+                timer.invalidate()
+                completion(false)
+            }
+        }
+    }
+
+    func relaunchApp() {
+        // macOS caches permission results - need to relaunch to pick up new status
+        guard let bundlePath = Bundle.main.bundlePath as String? else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", bundlePath]  // -n opens a new instance
+        do {
+            try task.run()
+            // Small delay to ensure open command starts before we terminate
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            // If relaunch fails, just terminate
+            NSApp.terminate(nil)
+        }
     }
     
     func checkAudioPermissionStatus() {
@@ -251,10 +311,28 @@ struct PermissionsView: View {
                         title: "Accessibility Access",
                         description: "Allow VoiceInk to paste transcribed text directly at your cursor position",
                         isGranted: permissionManager.isAccessibilityEnabled,
-                        buttonTitle: "Open System Settings",
+                        buttonTitle: "Request Permission",
                         buttonAction: {
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                NSWorkspace.shared.open(url)
+                            permissionManager.requestAccessibilityPermission { granted in
+                                if !granted {
+                                    // Open System Settings as fallback, then relaunch to pick up permission
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                    // Wait for user to enable, then relaunch
+                                    var relaunchCheckCount = 0
+                                    Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                                        relaunchCheckCount += 1
+                                        if AXIsProcessTrusted() {
+                                            timer.invalidate()
+                                            permissionManager.relaunchApp()
+                                        } else if relaunchCheckCount >= 20 {
+                                            // After 10 seconds, relaunch anyway to refresh state
+                                            timer.invalidate()
+                                            permissionManager.relaunchApp()
+                                        }
+                                    }
+                                }
                             }
                         },
                         checkPermission: { permissionManager.checkAccessibilityPermissions() },
@@ -269,10 +347,26 @@ struct PermissionsView: View {
                         isGranted: permissionManager.isScreenRecordingEnabled,
                         buttonTitle: "Request Permission",
                         buttonAction: {
-                            permissionManager.requestScreenRecordingPermission()
-                            // After requesting, open system preferences as fallback
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                                NSWorkspace.shared.open(url)
+                            permissionManager.requestScreenRecordingPermission { granted in
+                                if !granted {
+                                    // Open System Settings as fallback, then relaunch to pick up permission
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                    // Wait for user to enable, then relaunch
+                                    var relaunchCheckCount = 0
+                                    Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                                        relaunchCheckCount += 1
+                                        if CGPreflightScreenCaptureAccess() {
+                                            timer.invalidate()
+                                            permissionManager.relaunchApp()
+                                        } else if relaunchCheckCount >= 20 {
+                                            // After 10 seconds, relaunch anyway to refresh state
+                                            timer.invalidate()
+                                            permissionManager.relaunchApp()
+                                        }
+                                    }
+                                }
                             }
                         },
                         checkPermission: { permissionManager.checkScreenRecordingPermission() },
