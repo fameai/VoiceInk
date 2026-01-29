@@ -330,7 +330,10 @@ class AIService: ObservableObject {
     }
     
     private func verifyOpenAICompatibleAPIKey(_ key: String, completion: @escaping (Bool, String?) -> Void) {
-        let url = URL(string: selectedProvider.baseURL)!
+        guard let url = URL(string: selectedProvider.baseURL) else {
+            completion(false, "Invalid provider URL")
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -370,7 +373,10 @@ class AIService: ObservableObject {
     }
     
     private func verifyAnthropicAPIKey(_ key: String, completion: @escaping (Bool, String?) -> Void) {
-        let url = URL(string: selectedProvider.baseURL)!
+        guard let url = URL(string: selectedProvider.baseURL) else {
+            completion(false, "Invalid provider URL")
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")

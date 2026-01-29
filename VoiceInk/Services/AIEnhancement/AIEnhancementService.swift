@@ -185,9 +185,10 @@ class AIEnhancementService: ObservableObject {
             } else {
                 return activePrompt.finalPromptText + finalContextSection
             }
-        } else {
-            let defaultPrompt = allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId }) ?? allPrompts.first!
+        } else if let defaultPrompt = allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId }) ?? allPrompts.first {
             return defaultPrompt.finalPromptText + finalContextSection
+        } else {
+            return finalContextSection
         }
     }
 
@@ -279,7 +280,9 @@ class AIEnhancementService: ObservableObject {
             }
 
         default:
-            let url = URL(string: aiService.selectedProvider.baseURL)!
+            guard let url = URL(string: aiService.selectedProvider.baseURL) else {
+                throw EnhancementError.customError("Invalid provider URL")
+            }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
