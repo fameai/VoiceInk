@@ -16,8 +16,20 @@ class VoiceInkCSVExportService {
             if result == .OK, let url = savePanel.url {
                 do {
                     try csvString.write(to: url, atomically: true, encoding: .utf8)
+                    Task { @MainActor in
+                        NotificationManager.shared.showNotification(
+                            title: "Transcriptions exported successfully",
+                            type: .success
+                        )
+                    }
                 } catch {
                     print("Error writing CSV file: \(error)")
+                    Task { @MainActor in
+                        NotificationManager.shared.showNotification(
+                            title: "Failed to export: \(error.localizedDescription)",
+                            type: .error
+                        )
+                    }
                 }
             }
         }
