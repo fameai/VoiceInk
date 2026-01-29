@@ -131,7 +131,7 @@ extension WhisperState {
     }
     
     @objc func handleLicenseStatusChanged() {
-        self.licenseViewModel = LicenseViewModel()
+        // Source build: no license management needed
     }
     
     @objc func handlePromptChange() {
