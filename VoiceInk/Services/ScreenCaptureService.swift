@@ -59,18 +59,9 @@ class ScreenCaptureService: ObservableObject {
         return nil
     }
     
-    /// Check if screen recording permission is available (using both system API and cached UserDefaults)
-    private func hasScreenRecordingPermission() -> Bool {
-        if CGPreflightScreenCaptureAccess() {
-            return true
-        }
-        // Fall back to UserDefaults cache for macOS permission caching issues
-        return UserDefaults.standard.bool(forKey: "screenRecordingPermissionGranted")
-    }
-
     func captureActiveWindow() async -> NSImage? {
         // Check permission before attempting capture
-        guard hasScreenRecordingPermission() else {
+        guard PermissionHelper.hasScreenRecordingPermission else {
             return nil
         }
 
@@ -144,7 +135,7 @@ class ScreenCaptureService: ObservableObject {
         }
 
         // Check permission before attempting capture
-        guard hasScreenRecordingPermission() else {
+        guard PermissionHelper.hasScreenRecordingPermission else {
             return nil
         }
 

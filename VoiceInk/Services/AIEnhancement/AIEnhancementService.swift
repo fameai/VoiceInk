@@ -141,7 +141,7 @@ class AIEnhancementService: ObservableObject {
 
     private func getSystemMessage(for mode: EnhancementPrompt) async -> String {
         let selectedTextContext: String
-        if AXIsProcessTrusted() || UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted") {
+        if PermissionHelper.hasAccessibilityPermission {
             if let selectedText = await SelectedTextService.fetchSelectedText(), !selectedText.isEmpty {
                 selectedTextContext = "\n\n<CURRENTLY_SELECTED_TEXT>\n\(selectedText)\n</CURRENTLY_SELECTED_TEXT>"
             } else {

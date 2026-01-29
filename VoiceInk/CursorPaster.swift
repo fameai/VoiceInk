@@ -3,15 +3,6 @@ import AppKit
 
 class CursorPaster {
 
-    /// Check accessibility permission with UserDefaults fallback for macOS caching issues
-    private static func hasAccessibilityPermission() -> Bool {
-        if AXIsProcessTrusted() {
-            return true
-        }
-        // Fall back to UserDefaults cache for macOS permission caching issues
-        return UserDefaults.standard.bool(forKey: "accessibilityPermissionGranted")
-    }
-
     static func pasteAtCursor(_ text: String) {
         let pasteboard = NSPasteboard.general
         // Default to true if not explicitly set by user
@@ -57,7 +48,7 @@ class CursorPaster {
     }
     
     private static func pasteUsingAppleScript() -> Bool {
-        guard hasAccessibilityPermission() else {
+        guard PermissionHelper.hasAccessibilityPermission else {
             return false
         }
         
@@ -76,7 +67,7 @@ class CursorPaster {
     }
     
     private static func pasteUsingCommandV() {
-        guard hasAccessibilityPermission() else {
+        guard PermissionHelper.hasAccessibilityPermission else {
             return
         }
         
@@ -99,7 +90,7 @@ class CursorPaster {
 
     // Simulate pressing the Return / Enter key
     static func pressEnter() {
-        guard hasAccessibilityPermission() else { return }
+        guard PermissionHelper.hasAccessibilityPermission else { return }
         let source = CGEventSource(stateID: .hidSystemState)
         let enterDown = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: true)
         let enterUp = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: false)
